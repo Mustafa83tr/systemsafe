@@ -112,25 +112,26 @@ module.exports = async function handler(req, res) {
 
     // Teşhis: her sunucunun ham yanıtının özetini göster
     if (debug) {
-      const lines = [];
-      for (const inst of INSTANCES) {
-        try {
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 6000);
-          const r = await fetch(`https://${inst}/${path}${query}`, {
-            headers: { 'user-agent': UA, 'accept-language': 'tr-TR,tr;q=0.9,en;q=0.8', 'accept-encoding': 'identity' },
-            redirect: 'manual',
-            signal: ctrl.signal,
-          });
-          clearTimeout(timer);
-          const t = await r.text();
-          const title = (t.match(/<title[^>]*>([^<]*)/i) || [])[1] || '';
-          const plain = t.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-          lines.push(`[${inst}] HTTP ${r.status} | type=${r.headers.get('content-type')} | len=${t.length} | location=${r.headers.get('location') || '-'} | title=${title.trim()}\n   ${plain.slice(0, 350)}`);
-        } catch (e) {
-          lines.push(`[${inst}] HATA: ${e && e.name === 'AbortError' ? 'zaman aşımı' : e.message}`);
-        }
-      }
+      const lines = await Promise.all(
+        INSTANCES.map(async (inst) => {
+          try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 8000);
+            const r = await fetch(`https://${inst}/${path}${query}`, {
+              headers: { 'user-agent': UA, 'accept-language': 'tr-TR,tr;q=0.9,en;q=0.8', 'accept-encoding': 'identity' },
+              redirect: 'manual',
+              signal: ctrl.signal,
+            });
+            const t = await r.text();
+            clearTimeout(timer);
+            const title = (t.match(/<title[^>]*>([^<]*)/i) || [])[1] || '';
+            const plain = t.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+            return `[${inst}] HTTP ${r.status} | type=${r.headers.get('content-type')} | len=${t.length} | location=${r.headers.get('location') || '-'} | title=${title.trim()}\n   ${plain.slice(0, 350)}`;
+          } catch (e) {
+            return `[${inst}] HATA: ${e && e.name === 'AbortError' ? 'zaman aşımı' : e.message}`;
+          }
+        })
+      );
       res.statusCode = 200;
       res.setHeader('content-type', 'text/plain; charset=utf-8');
       res.end(lines.join('\n\n'));
