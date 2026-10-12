@@ -21,7 +21,7 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const PASS_HEADERS = ['content-type', 'cache-control', 'content-disposition', 'content-language', 'etag', 'last-modified', 'accept-ranges', 'content-range'];
 const TEXT_TYPE = /(text\/|javascript|json|xml|svg)/i;
-const CHALLENGE = /(verifying your browser|checking your browser|just a moment|go-away|attention required|enable javascript and cookies)/i;
+const CHALLENGE = /(verifying your browser|checking your browser|just a moment|go-away|attention required|enable javascript and cookies|anubis|making sure you.?re not a bot|bot olmad[ıi]ğ[ıi]n[ıi]zdan|proof.of.work|techaro|captcha)/i;
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const HOST_RE = new RegExp('(https?:)?(\\\\?\\/){2}(' + INSTANCES.map(esc).join('|') + ')', 'g');
 
@@ -56,7 +56,7 @@ async function tryInstance(inst, path, query, req, body) {
   if (req.headers.origin) headers.origin = `https://${inst}`;
 
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8000);
+  const timer = setTimeout(() => ctrl.abort(), 7000);
   try {
     const r = await fetch(`https://${inst}/${path}${query}`, {
       method: req.method,
@@ -108,7 +108,7 @@ module.exports = async function handler(req, res) {
 
     // Sunucuları sırayla dene (en son çalışandan başla), en fazla 4 deneme
     let result = null;
-    const order = INSTANCES.map((_, i) => (preferred + i) % INSTANCES.length).slice(0, 4);
+    const order = INSTANCES.map((_, i) => (preferred + i) % INSTANCES.length).slice(0, 5);
     for (const idx of order) {
       result = await tryInstance(INSTANCES[idx], path, query, req, body);
       if (result) {
