@@ -41,7 +41,7 @@ async function readBody(req) {
   return chunks.length ? Buffer.concat(chunks) : undefined;
 }
 
-// Bir sunucuya istek at; bot kontrolü / hata ise null döndür.
+// Bir sunucuya istek at; bot kontrolü / hata ise { fail: sebep } döndür.
 async function tryInstance(inst, path, query, req, body) {
   const headers = {
     'user-agent': UA,
@@ -65,16 +65,17 @@ async function tryInstance(inst, path, query, req, body) {
       redirect: 'manual',
       signal: ctrl.signal,
     });
-    if ([403, 429, 502, 503, 504].includes(r.status) || r.status >= 520) return null;
+    if ([403, 429, 502, 503, 504].includes(r.status) || r.status >= 520) return { fail: 'HTTP ' + r.status };
     const type = r.headers.get('content-type') || '';
     if (TEXT_TYPE.test(type)) {
       const text = await r.text();
-      if (type.includes('text/html') && CHALLENGE.test(text.slice(0, 4000))) return null;
+      const m = type.includes('text/html') && text.slice(0, 4000).match(CHALLENGE);
+      if (m) return { fail: 'bot kontrolü (' + m[0] + ')' };
       return { r, text };
     }
     return { r, buf: Buffer.from(await r.arrayBuffer()) };
   } catch (e) {
-    return null;
+    return { fail: e && e.name === 'AbortError' ? 'zaman aşımı' : 'bağlantı hatası' };
   } finally {
     clearTimeout(timer);
   }
@@ -108,19 +109,22 @@ module.exports = async function handler(req, res) {
 
     // Sunucuları sırayla dene (en son çalışandan başla), en fazla 4 deneme
     let result = null;
+    const fails = [];
     const order = INSTANCES.map((_, i) => (preferred + i) % INSTANCES.length).slice(0, 5);
     for (const idx of order) {
-      result = await tryInstance(INSTANCES[idx], path, query, req, body);
-      if (result) {
+      const t = await tryInstance(INSTANCES[idx], path, query, req, body);
+      if (t && !t.fail) {
+        result = t;
         preferred = idx;
         break;
       }
+      fails.push(INSTANCES[idx] + ': ' + (t ? t.fail : 'bilinmiyor'));
     }
 
     if (!result) {
       res.statusCode = 502;
       res.setHeader('content-type', 'text/plain; charset=utf-8');
-      res.end('Hiçbir Invidious sunucusu yanıt vermedi (bot kontrolü veya kesinti). Biraz sonra tekrar dene.');
+      res.end('Hiçbir Invidious sunucusu yanıt vermedi.\n\n' + fails.join('\n'));
       return;
     }
 
