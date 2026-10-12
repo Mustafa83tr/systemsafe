@@ -1,10 +1,9 @@
-JavaScript
+import url from 'url';
+
 export default async function handler(req, res) {
-  // URL parametrelerini güvenli şekilde alalım
-  const protocol = req.headers['x-forwarded-proto'] || 'http';
-  const fullUrl = `${protocol}://${req.headers.host}${req.url}`;
-  const parsedUrl = new URL(fullUrl);
-  const targetUrl = parsedUrl.searchParams.get('url');
+  // Query parametrelerini güvenli ve hatasız alalım
+  const queryObject = url.parse(req.url, true).query;
+  const targetUrl = queryObject.url;
 
   if (!targetUrl) {
     res.setHeader('Content-Type', 'text/html;charset=utf-8');
