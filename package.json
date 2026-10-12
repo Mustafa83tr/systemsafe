@@ -1,7 +1,5 @@
+json
 {
   "name": "vercel-proxy",
-  "version": "1.0.0",
-  "type": "module",
-  "dependencies": {}
+  "version": "1.0.0"
 }
- 
