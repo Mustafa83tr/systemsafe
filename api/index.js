@@ -1,10 +1,10 @@
-import url from 'url';
+const url = require('url');
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   const queryObject = url.parse(req.url, true).query;
   let targetUrl = queryObject.url;
 
-  // Hedef belirtilmemişse direkt Mobil YouTube'a yönlendiren şık bir arayüz sunalım
+  // Hedef belirtilmemişse Mobil YouTube arayüzünü sunalım
   if (!targetUrl) {
     res.setHeader('Content-Type', 'text/html;charset=utf-8');
     res.statusCode = 200;
@@ -35,7 +35,6 @@ export default async function handler(req, res) {
       targetUrl = 'https://' + targetUrl;
     }
 
-    // YouTube bot korumalarını ve masaüstü ağır yükünü engellemek için iOS Safari Kimliği kullanıyoruz
     const response = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/605.1.15',
@@ -46,7 +45,6 @@ export default async function handler(req, res) {
 
     const contentType = response.headers.get('content-type') || '';
 
-    // HTML verilerini doğrudan, medya/statik dosyaları ise ham buffer olarak aktarıyoruz
     if (contentType.includes('text/html')) {
       const html = await response.text();
       res.setHeader('Content-Type', 'text/html;charset=utf-8');
@@ -62,4 +60,4 @@ export default async function handler(req, res) {
     res.statusCode = 500;
     res.end('Tünel Bağlantı Hatası: ' + err.message);
   }
-}
+};
