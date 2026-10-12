@@ -72,3 +72,4 @@ module.exports = async function handler(req, res) {
     res.end('Tünel Bağlantı Hatası: ' + err.message);
   }
 };
+ 
