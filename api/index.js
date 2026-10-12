@@ -1,10 +1,15 @@
 JavaScript
 export default async function handler(req, res) {
-  const targetUrl = req.query.url;
+  // URL parametrelerini güvenli şekilde alalım
+  const protocol = req.headers['x-forwarded-proto'] || 'http';
+  const fullUrl = `${protocol}://${req.headers.host}${req.url}`;
+  const parsedUrl = new URL(fullUrl);
+  const targetUrl = parsedUrl.searchParams.get('url');
 
   if (!targetUrl) {
     res.setHeader('Content-Type', 'text/html;charset=utf-8');
-    return res.status(200).send(`
+    res.statusCode = 200;
+    res.end(`
       <!DOCTYPE html>
       <html>
       <head><title>Vercel Web Proxy</title></head>
@@ -19,6 +24,7 @@ export default async function handler(req, res) {
       </body>
       </html>
     `);
+    return;
   }
 
   try {
@@ -35,8 +41,10 @@ export default async function handler(req, res) {
 
     const body = await response.text();
     res.setHeader('Content-Type', response.headers.get('content-type') || 'text/html;charset=utf-8');
-    return res.status(response.status).send(body);
+    res.statusCode = response.status;
+    res.end(body);
   } catch (err) {
-    return res.status(500).send('Bağlantı Hatası: ' + err.message);
+    res.statusCode = 500;
+    res.end('Bağlantı Hatası: ' + err.message);
   }
 }
