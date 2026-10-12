@@ -105,8 +105,12 @@ module.exports = async function handler(req, res) {
         rest.push(part);
       }
     }
-    const debug = rest.includes('_debug_=1');
-    if (debug) rest.splice(rest.indexOf('_debug_=1'), 1);
+    const dbgKeys = ['_debug_=1', 'dbg=1'];
+    const debug = rest.some((x) => dbgKeys.includes(x));
+    for (const k of dbgKeys) {
+      const i = rest.indexOf(k);
+      if (i >= 0) rest.splice(i, 1);
+    }
     const query = rest.length ? '?' + rest.join('&') : '';
     const body = await readBody(req);
 
