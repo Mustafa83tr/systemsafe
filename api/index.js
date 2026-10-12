@@ -1,75 +1,113 @@
-const url = require('url');
+// Tek bir Invidious sunucusuna bağlı ters proxy.
+// Tüm yollar vercel.json ile bu fonksiyona yönlendirilir (?_p_=<yol>).
+// Sadece INSTANCE adresine bağlanır, yani herkese açık bir "açık proxy" değildir.
+
+const INSTANCE = (process.env.INSTANCE || 'yewtu.be').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+const UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+const PASS_HEADERS = ['content-type', 'cache-control', 'content-disposition', 'content-language', 'etag', 'last-modified', 'accept-ranges', 'content-range'];
+const TEXT_TYPE = /(text\/|javascript|json|xml|svg)/i;
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const HOST_RE = new RegExp('(https?:)?(\\\\?\\/){2}' + esc(INSTANCE), 'g');
+
+async function readBody(req) {
+  if (req.method === 'GET' || req.method === 'HEAD') return undefined;
+  const b = req.body;
+  const ct = String(req.headers['content-type'] || '');
+  if (b !== undefined && b !== null) {
+    if (Buffer.isBuffer(b) || typeof b === 'string') return b;
+    if (ct.includes('application/x-www-form-urlencoded')) return new URLSearchParams(b).toString();
+    return JSON.stringify(b);
+  }
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  return chunks.length ? Buffer.concat(chunks) : undefined;
+}
 
 module.exports = async function handler(req, res) {
-  const queryObject = url.parse(req.url, true).query;
-  let targetUrl = queryObject.url;
-
-  // Hedef yoksa şık arayüzü sun
-  if (!targetUrl) {
-    res.setHeader('Content-Type', 'text/html;charset=utf-8');
-    res.statusCode = 200;
-    res.end(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>YouTube Güvenli Tünel</title>
-      </head>
-      <body style="font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#0f0f0f;color:#fff;margin:0;">
-        <div style="background:#212121;padding:40px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6);text-align:center;width:400px;">
-          <h2 style="margin-bottom:10px;color:#ff0033;">YouTube Tüneli</h2>
-          <p style="color:#aaa;font-size:14px;margin-bottom:20px;">Kurumsal ağ geçidi aktif.</p>
-          <form method="GET" style="display:flex;flex-direction:column;gap:15px;">
-            <input type="text" name="url" value="https://m.youtube.com" placeholder="https://m.youtube.com" style="width:100%;padding:12px;border:1px solid #3f3f3f;border-radius:6px;background:#121212;color:#fff;box-sizing:border-box;outline:none;" required>
-            <button type="submit" style="width:100%;padding:12px;background:#cc0000;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;font-size:15px;">YouTube'u Başlat</button>
-          </form>
-        </div>
-      </body>
-      </html>
-    `);
-    return;
-  }
-
   try {
-    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
-      targetUrl = 'https://' + targetUrl;
-    }
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host;
+    const proxyOrigin = `${proto}://${host}`;
 
-    const parsedTarget = new URL(targetUrl);
-    const proxyHost = req.headers['x-forwarded-host'] || req.headers.host;
-    const protocol = req.headers['x-forwarded-proto'] || 'https';
-    const proxyBase = `${protocol}://${proxyHost}/api?url=`;
-
-    const response = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/605.1.15',
-        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Referer': 'https://m.youtube.com/'
+    // Gelen adresten yol ve sorgu parçalarını ayır
+    const raw = req.url || '/';
+    const qi = raw.indexOf('?');
+    const parts = qi >= 0 ? raw.slice(qi + 1).split('&') : [];
+    let path = '';
+    const rest = [];
+    for (const part of parts) {
+      if (part.startsWith('_p_=')) {
+        try {
+          path = encodeURI(decodeURIComponent(part.slice(4)));
+        } catch (e) {
+          path = part.slice(4);
+        }
+      } else if (part) {
+        rest.push(part);
       }
-    });
-
-    const contentType = response.headers.get('content-type') || '';
-
-    if (contentType.includes('text/html')) {
-      let html = await response.text();
-
-      // Göreceli yolları proxy üzerinden akacak şekilde yeniden yazıyoruz
-      html = html.replace(/(href|src)="\/([^"]*)"/g, (match, attr, path) => {
-        return `${attr}="${proxyBase}https://${parsedTarget.host}/${path}"`;
-      });
-
-      res.setHeader('Content-Type', 'text/html;charset=utf-8');
-      res.statusCode = response.status;
-      res.end(html);
-    } else {
-      const buffer = await response.arrayBuffer();
-      res.setHeader('Content-Type', contentType);
-      res.statusCode = response.status;
-      res.end(Buffer.from(buffer));
     }
+    const target = `https://${INSTANCE}/${path}${rest.length ? '?' + rest.join('&') : ''}`;
+
+    // İstek başlıkları
+    const headers = {
+      'user-agent': UA,
+      'accept': req.headers['accept'] || '*/*',
+      'accept-language': req.headers['accept-language'] || 'tr-TR,tr;q=0.9,en;q=0.8',
+      'accept-encoding': 'identity',
+    };
+    if (req.headers.cookie) headers.cookie = req.headers.cookie;
+    if (req.headers['content-type']) headers['content-type'] = req.headers['content-type'];
+    if (req.headers.range) headers.range = req.headers.range;
+    if (req.headers.origin) headers.origin = `https://${INSTANCE}`;
+    headers.referer = `https://${INSTANCE}/`;
+
+    const body = await readBody(req);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+
+    const upstream = await fetch(target, {
+      method: req.method,
+      headers,
+      body,
+      redirect: 'manual',
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+
+    // Yanıt başlıkları
+    for (const h of PASS_HEADERS) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+    const loc = upstream.headers.get('location');
+    if (loc) res.setHeader('location', loc.replace(HOST_RE, proxyOrigin));
+
+    const cookies = typeof upstream.headers.getSetCookie === 'function' ? upstream.headers.getSetCookie() : [];
+    if (cookies.length) {
+      res.setHeader(
+        'set-cookie',
+        cookies.map((c) => c.replace(/;\s*domain=[^;]*/i, ''))
+      );
+    }
+
+    const type = upstream.headers.get('content-type') || '';
+    let out;
+    if (TEXT_TYPE.test(type)) {
+      let text = await upstream.text();
+      text = text.replace(HOST_RE, (m) => (m.includes('\\') ? proxyOrigin.replace(/\//g, '\\/') : proxyOrigin));
+      out = Buffer.from(text, 'utf8');
+    } else {
+      out = Buffer.from(await upstream.arrayBuffer());
+    }
+
+    res.statusCode = upstream.status;
+    res.setHeader('content-length', out.length);
+    res.end(req.method === 'HEAD' ? undefined : out);
   } catch (err) {
-    res.statusCode = 500;
-    res.end('Tünel Bağlantı Hatası: ' + err.message);
+    res.statusCode = 502;
+    res.setHeader('content-type', 'text/plain; charset=utf-8');
+    res.end('Proxy hatası: ' + (err && err.message ? err.message : err));
   }
 };
- 
