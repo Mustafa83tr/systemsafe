@@ -21,7 +21,7 @@ const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const PASS_HEADERS = ['content-type', 'cache-control', 'content-disposition', 'content-language', 'etag', 'last-modified', 'accept-ranges', 'content-range'];
 const TEXT_TYPE = /(text\/|javascript|json|xml|svg)/i;
-const CHALLENGE = /(verifying your browser|checking your browser|just a moment|go-away|attention required|enable javascript and cookies|anubis|making sure you.?re not a bot|bot olmad[ıi]ğ[ıi]n[ıi]zdan|proof.of.work|techaro|captcha|cap challenge|not a bot|bot de[ğg]il|hcaptcha|request id)/i;
+const CHALLENGE = /(verifying your browser|checking your browser|just a moment|go-away|attention required|enable javascript and cookies|anubis|making sure you.?re not a bot|bot olmad[ıi]ğ[ıi]n[ıi]zdan|proof.of.work|techaro|captcha|cap\W{0,12}challenge|not a bot|bot de[ğg]il|hcaptcha|request id)/i;
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const HOST_RE = new RegExp('(https?:)?(\\\\?\\/){2}(' + INSTANCES.map(esc).join('|') + ')', 'g');
 
@@ -69,7 +69,8 @@ async function tryInstance(inst, path, query, req, body) {
     const type = r.headers.get('content-type') || '';
     if (TEXT_TYPE.test(type)) {
       const text = await r.text();
-      const m = type.includes('text/html') && text.slice(0, 4000).match(CHALLENGE);
+      // Bot kontrolü sayfaları küçüktür; gerçek sayfalar (video, arama) çok daha büyüktür.
+      const m = type.includes('text/html') && text.length < 40000 && text.match(CHALLENGE);
       if (m) return { fail: 'bot kontrolü (' + m[0] + ')' };
       return { r, text };
     }
